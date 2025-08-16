@@ -12,6 +12,33 @@ IMAP and SMTP via MCP Server
 - **Github repository**: <https://github.com/ai-zerolab/mcp-email-server/>
 - **Documentation** <https://ai-zerolab.github.io/mcp-email-server/>
 
+## Features
+
+### Core Email Operations
+- **Email Retrieval**: Paginated email reading with filtering support
+- **Email Sending**: Send emails with CC/BCC support via SMTP
+- **Email Search**: Filter emails by subject, body, sender, recipient, and date ranges
+
+### Advanced Email Management
+- **Email Move**: Move emails between IMAP folders
+- **Email Copy**: Copy emails to different folders  
+- **Folder Management**: List, create, and manage IMAP folders/mailboxes
+- **UID Support**: All operations use IMAP UIDs for reliable email handling
+
+### MCP Tools Available
+- `page_email` - Retrieve and filter emails with pagination
+- `send_email` - Send emails with CC/BCC support
+- `list_folders` - List all available IMAP folders
+- `create_folder` - Create new IMAP folders
+- `copy_emails` - Copy emails to another folder by UID
+- `move_emails` - Move emails to another folder by UID
+
+### Email Account Management
+- Multiple email account support
+- Secure credential storage
+- IMAP and SMTP configuration
+- Account masking for security
+
 ## Installation
 
 ### Manual Installation

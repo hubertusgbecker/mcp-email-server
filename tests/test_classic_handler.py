@@ -61,6 +61,7 @@ class TestClassicEmailHandler:
             "body": "Test Body",
             "date": now,
             "attachments": [],
+            "uid": "12345",  # Add UID to test data
         }
 
         # Mock the get_emails_stream method to yield our test data
@@ -102,6 +103,7 @@ class TestClassicEmailHandler:
                 assert result.emails[0].body == "Test Body"
                 assert result.emails[0].date == now
                 assert result.emails[0].attachments == []
+                assert result.emails[0].uid == "12345"  # Check UID field
                 assert result.total == 1
 
                 # Verify the client methods were called correctly

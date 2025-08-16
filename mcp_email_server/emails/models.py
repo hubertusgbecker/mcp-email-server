@@ -10,6 +10,7 @@ class EmailData(BaseModel):
     body: str
     date: datetime
     attachments: list[str]
+    uid: str | None = None  # IMAP UID for operations like move/copy
 
     @classmethod
     def from_email(cls, email: dict[str, Any]):
@@ -19,6 +20,7 @@ class EmailData(BaseModel):
             body=email["body"],
             date=email["date"],
             attachments=email["attachments"],
+            uid=email.get("uid"),
         )
 
 
@@ -32,3 +34,19 @@ class EmailPageResponse(BaseModel):
     text: str | None
     emails: list[EmailData]
     total: int
+
+
+class FolderInfo(BaseModel):
+    """Information about an IMAP folder/mailbox."""
+    name: str
+    delimiter: str
+    flags: list[str]
+
+
+class EmailOperationResult(BaseModel):
+    """Result of email move/copy operations."""
+    success: bool
+    message: str
+    moved_count: int = 0
+    copied_count: int = 0
+    failed_uids: list[str] = []

@@ -11,7 +11,7 @@ import aiosmtplib
 
 from mcp_email_server.config import EmailServer, EmailSettings
 from mcp_email_server.emails import EmailHandler
-from mcp_email_server.emails.models import EmailData, EmailPageResponse
+from mcp_email_server.emails.models import EmailData, EmailOperationResult, EmailPageResponse, FolderInfo
 from mcp_email_server.log import logger
 
 
@@ -193,6 +193,8 @@ class EmailClient:
                     if raw_email:
                         try:
                             parsed_email = self._parse_email_data(raw_email)
+                            # Add UID to the parsed email data
+                            parsed_email["uid"] = message_id_str
                             yield parsed_email
                         except Exception as e:
                             # Log error but continue with other emails
@@ -303,7 +305,193 @@ class EmailClient:
 
             await smtp.send_message(msg, recipients=all_recipients)
 
+    async def list_folders(self) -> list[FolderInfo]:
+        """List all IMAP folders/mailboxes."""
+        imap = self.imap_class(self.email_server.host, self.email_server.port)
+        try:
+            # Wait for the connection to be established
+            await imap._client_task
+            await imap.wait_hello_from_server()
 
+            # Login
+            await imap.login(self.email_server.user_name, self.email_server.password)
+
+            # List folders
+            _, folders = await imap.list("", "*")
+
+            folder_list = []
+            for folder_data in folders:
+                if isinstance(folder_data, bytes):
+                    folder_str = folder_data.decode('utf-8')
+                    # Parse folder response: (flags) "delimiter" "name"
+                    # Example: (\HasNoChildren) "." "INBOX.Sent"
+                    import re
+                    match = re.match(r'\(([^)]*)\)\s+"([^"]*)"\s+"?([^"]*)"?', folder_str)
+                    if match:
+                        flags_str, delimiter, name = match.groups()
+                        flags = [f.strip() for f in flags_str.split('\\') if f.strip()]
+                        folder_list.append(FolderInfo(
+                            name=name.strip('"'),
+                            delimiter=delimiter,
+                            flags=flags
+                        ))
+
+            return folder_list
+        finally:
+            try:
+                await imap.logout()
+            except Exception as e:
+                logger.info(f"Error during logout: {e}")
+
+    async def create_folder(self, folder_name: str) -> bool:
+        """Create a new IMAP folder/mailbox."""
+        imap = self.imap_class(self.email_server.host, self.email_server.port)
+        try:
+            # Wait for the connection to be established
+            await imap._client_task
+            await imap.wait_hello_from_server()
+
+            # Login
+            await imap.login(self.email_server.user_name, self.email_server.password)
+
+            # Create folder
+            _, result = await imap.create(folder_name)
+            return result[0] == b'OK' if result else False
+        except Exception as e:
+            logger.error(f"Error creating folder {folder_name}: {e}")
+            return False
+        finally:
+            try:
+                await imap.logout()
+            except Exception as e:
+                logger.info(f"Error during logout: {e}")
+
+    async def copy_emails(self, uids: list[str], destination_folder: str) -> EmailOperationResult:
+        """Copy emails to another folder by UID."""
+        imap = self.imap_class(self.email_server.host, self.email_server.port)
+        try:
+            # Wait for the connection to be established
+            await imap._client_task
+            await imap.wait_hello_from_server()
+
+            # Login and select inbox
+            await imap.login(self.email_server.user_name, self.email_server.password)
+            await imap.select("INBOX")
+
+            copied_count = 0
+            failed_uids = []
+
+            for uid in uids:
+                try:
+                    # Copy email to destination folder
+                    _, result = await imap.uid('copy', uid, destination_folder)
+                    if result and result[0] == b'OK':
+                        copied_count += 1
+                    else:
+                        failed_uids.append(uid)
+                except Exception as e:
+                    logger.error(f"Error copying email UID {uid}: {e}")
+                    failed_uids.append(uid)
+
+            success = len(failed_uids) == 0
+            message = f"Successfully copied {copied_count} emails"
+            if failed_uids:
+                message += f", {len(failed_uids)} failed"
+
+            return EmailOperationResult(
+                success=success,
+                message=message,
+                copied_count=copied_count,
+                failed_uids=failed_uids
+            )
+        except Exception as e:
+            logger.error(f"Error in copy_emails: {e}")
+            return EmailOperationResult(
+                success=False,
+                message=f"Copy operation failed: {e}",
+                failed_uids=uids
+            )
+        finally:
+            try:
+                await imap.logout()
+            except Exception as e:
+                logger.info(f"Error during logout: {e}")
+
+    async def move_emails(self, uids: list[str], destination_folder: str) -> EmailOperationResult:
+        """Move emails to another folder by UID."""
+        imap = self.imap_class(self.email_server.host, self.email_server.port)
+        try:
+            # Wait for the connection to be established
+            await imap._client_task
+            await imap.wait_hello_from_server()
+
+            # Login and select inbox
+            await imap.login(self.email_server.user_name, self.email_server.password)
+            await imap.select("INBOX")
+
+            moved_count = 0
+            failed_uids = []
+
+            # Process each UID
+            for uid in uids:
+                if await self._move_single_email(imap, uid, destination_folder):
+                    moved_count += 1
+                else:
+                    failed_uids.append(uid)
+
+            # Expunge deleted messages
+            if moved_count > 0:
+                try:
+                    await imap.expunge()
+                except Exception as e:
+                    logger.warning(f"Expunge failed: {e}")
+
+            success = len(failed_uids) == 0
+            message = f"Successfully moved {moved_count} emails"
+            if failed_uids:
+                message += f", {len(failed_uids)} failed"
+
+            return EmailOperationResult(
+                success=success,
+                message=message,
+                moved_count=moved_count,
+                failed_uids=failed_uids
+            )
+        except Exception as e:
+            logger.error(f"Error in move_emails: {e}")
+            return EmailOperationResult(
+                success=False,
+                message=f"Move operation failed: {e}",
+                failed_uids=uids
+            )
+        finally:
+            try:
+                await imap.logout()
+            except Exception as e:
+                logger.info(f"Error during logout: {e}")
+
+    async def _move_single_email(self, imap, uid: str, destination_folder: str) -> bool:
+        """Move a single email by UID. Returns True if successful."""
+        try:
+            # Try MOVE command first (RFC 6851)
+            _, result = await imap.uid('move', uid, destination_folder)
+            if result and result[0] == b'OK':
+                return True
+        except Exception as e:
+            logger.debug(f"MOVE command failed for UID {uid}, falling back to COPY+DELETE: {e}")
+
+        # Fallback to COPY + STORE + EXPUNGE
+        try:
+            # Copy email to destination
+            _, copy_result = await imap.uid('copy', uid, destination_folder)
+            if copy_result and copy_result[0] == b'OK':
+                # Mark as deleted
+                _, store_result = await imap.uid('store', uid, '+FLAGS.SILENT', '\\Deleted')
+                return store_result and store_result[0] == b'OK'
+        except Exception as e:
+            logger.error(f"Fallback copy+delete failed for UID {uid}: {e}")
+
+        return False
 class ClassicEmailHandler(EmailHandler):
     def __init__(self, email_settings: EmailSettings):
         self.email_settings = email_settings
@@ -348,3 +536,15 @@ class ClassicEmailHandler(EmailHandler):
         self, recipients: list[str], subject: str, body: str, cc: list[str] | None = None, bcc: list[str] | None = None
     ) -> None:
         await self.outgoing_client.send_email(recipients, subject, body, cc, bcc)
+
+    async def list_folders(self) -> list[FolderInfo]:
+        return await self.incoming_client.list_folders()
+
+    async def create_folder(self, folder_name: str) -> bool:
+        return await self.incoming_client.create_folder(folder_name)
+
+    async def copy_emails(self, uids: list[str], destination_folder: str) -> EmailOperationResult:
+        return await self.incoming_client.copy_emails(uids, destination_folder)
+
+    async def move_emails(self, uids: list[str], destination_folder: str) -> EmailOperationResult:
+        return await self.incoming_client.move_emails(uids, destination_folder)

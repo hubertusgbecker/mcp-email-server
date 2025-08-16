@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from mcp_email_server.emails.models import EmailPageResponse
+    from mcp_email_server.emails.models import EmailOperationResult, EmailPageResponse, FolderInfo
 
 
 class EmailHandler(abc.ABC):
@@ -31,4 +31,28 @@ class EmailHandler(abc.ABC):
     ) -> None:
         """
         Send email
+        """
+
+    @abc.abstractmethod
+    async def list_folders(self) -> list["FolderInfo"]:
+        """
+        List all available folders/mailboxes
+        """
+
+    @abc.abstractmethod
+    async def create_folder(self, folder_name: str) -> bool:
+        """
+        Create a new folder/mailbox
+        """
+
+    @abc.abstractmethod
+    async def copy_emails(self, uids: list[str], destination_folder: str) -> "EmailOperationResult":
+        """
+        Copy emails to another folder by UID
+        """
+
+    @abc.abstractmethod
+    async def move_emails(self, uids: list[str], destination_folder: str) -> "EmailOperationResult":
+        """
+        Move emails to another folder by UID
         """

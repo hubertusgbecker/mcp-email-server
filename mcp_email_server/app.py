@@ -11,7 +11,7 @@ from mcp_email_server.config import (
     get_settings,
 )
 from mcp_email_server.emails.dispatcher import dispatch_handler
-from mcp_email_server.emails.models import EmailPageResponse
+from mcp_email_server.emails.models import EmailOperationResult, EmailPageResponse, FolderInfo
 
 mcp = FastMCP("email")
 
@@ -100,3 +100,48 @@ async def send_email(
     handler = dispatch_handler(account_name)
     await handler.send_email(recipients, subject, body, cc, bcc)
     return
+
+
+@mcp.tool(
+    description="List all available folders/mailboxes in the email account.",
+)
+async def list_folders(
+    account_name: Annotated[str, Field(description="The name of the email account.")],
+) -> list[FolderInfo]:
+    handler = dispatch_handler(account_name)
+    return await handler.list_folders()
+
+
+@mcp.tool(
+    description="Create a new folder/mailbox in the email account.",
+)
+async def create_folder(
+    account_name: Annotated[str, Field(description="The name of the email account.")],
+    folder_name: Annotated[str, Field(description="The name of the folder to create.")],
+) -> bool:
+    handler = dispatch_handler(account_name)
+    return await handler.create_folder(folder_name)
+
+
+@mcp.tool(
+    description="Copy emails to another folder. Emails are identified by their UIDs.",
+)
+async def copy_emails(
+    account_name: Annotated[str, Field(description="The name of the email account.")],
+    uids: Annotated[list[str], Field(description="List of email UIDs to copy.")],
+    destination_folder: Annotated[str, Field(description="The destination folder name.")],
+) -> EmailOperationResult:
+    handler = dispatch_handler(account_name)
+    return await handler.copy_emails(uids, destination_folder)
+
+
+@mcp.tool(
+    description="Move emails to another folder. Emails are identified by their UIDs.",
+)
+async def move_emails(
+    account_name: Annotated[str, Field(description="The name of the email account.")],
+    uids: Annotated[list[str], Field(description="List of email UIDs to move.")],
+    destination_folder: Annotated[str, Field(description="The destination folder name.")],
+) -> EmailOperationResult:
+    handler = dispatch_handler(account_name)
+    return await handler.move_emails(uids, destination_folder)
